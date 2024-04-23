@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="styles.css">
+  <title>Login</title>
+</head>
+
+<body>
+  <div class="main-login">
+    <div class="right-login">
+      <div class="card-login">
+        <h1>LOGIN</h1>
+        <div class="textfield">
+          <label for="User">User name or email</label>
+          <input type="text" name="userid" placeholder="email@email.com" id="usernm">
+        </div>
+        <div class="textfield">
+          <label for="password">Password</label>
+          <input type="password" name="password" placeholder="password" id="pwd">
+        </div>
+        <button class="btn-login" id="login">Login</button>
+      </div>
+    </div>
+  </div>
+</body>
+
+</html>
+<script>
+
+  const login = document.getElementById('login');
+    
+  login.addEventListener('click', (event) => {
+
+    const usrn = document.getElementById("usernm").value;
+    const pass = document.getElementById("pwd").value;
+    
+    console.log(usrn);
+    console.log(pass);
+    fetch("http://localhost:4000/check-user",
+    {
+      method: "POST", body: JSON.stringify({ username: usrn , password: pass}),
+      headers: { "Content-type": "application/json; charset=UTF-8" }
+    })
+    .then(res => {
+      if(res.status==200)
+        window.location.href = "index.html";
+      else
+        alert('Invalid credentials');
+    })
+    .then(status => {
+      console.log(status);
+    });
+    event.preventDefault();
+    //
+  });
+</script>

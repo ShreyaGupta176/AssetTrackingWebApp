@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Web BLE App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="favicon.ico">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <meta charset="UTF-8">
+</head>
+<body>
+    <div class="topnav">
+        <h1>ESP32 Web BLE Application</h1>
+    </div>
+    <div class="content">
+        <div class="card-grid">
+
+            <div class="card">
+                <h2>Discover assets in a zone</h2>
+                <p>
+                    <button id="connectBleButton" class="connectButton"> Connect to a BLE Server</button>
+                    <button id="disconnectBleButton" class="disconnectButton"> Disconnect BLE Server</button>
+                </p>
+                <p class="gray-label">BLE state: <strong><span id="bleState" style="color:#d13a30;">Disconnected</span></strong></p>
+            </div>
+
+            <div class="card" style="display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;">
+                <h2>Assets located are</h2>
+                <p class="reading"><span id="valueContainer">xx:xx:xx:xx:xx:xx</span></p>
+                <p class="gray-label">Last reading: <span id="timestamp"></span></p>
+            </div>
+
+        </div>
+        <div class="card-grid">
+            <div class="card">
+                <h2>Locate an asset</h2>
+                <p style="text-align: left; padding-left: 5px">Choose an asset from below</p>
+                <form class="radio-group">
+                    <div class="radio-button">
+                        <input type="radio" id="64:e8:33:11:a2:0a" name="radiogroup" value="Xiao Seed">
+                        <label for="option1">Xiao Seed</label>
+                    </div>
+                  
+                    <div class="radio-button">
+                        <input type="radio" id="64:e8:33:12:21:c6" name="radiogroup" value="Asset 2">
+                        <label for="option2">Asset 2</label>
+                    </div>
+                  
+                </form>
+                <p><button id="findDevice" class="findButton">Find Device </button></p>
+            </div> 
+
+            <div class="card">
+                <h2>Results</h2>
+                <div style="display: flex; gap:10px;">
+                    <div style="font-weight: bold; width: 50%; text-align: right;">Asset Name : </div>
+                    <div style="width: 50%; text-align: left;">
+                        <span id="assetName"></span>
+                    </div>
+                </div>
+                <p class="result"><span id="resultContainer">💖💖💖💖</span></p>
+                <p class="gray-label">Last reading: <span id="resulttimestamp"></span></p>
+            </div>
+        </div>
+    </div>
+    <div class="footer">
+        <button id="logout" class="logout">Logout</button>
+    </div>
+</body>
+<script>
+    'use-strict'
+    // DOM Elements
+    const connectButton = document.getElementById('connectBleButton');
+    const disconnectButton = document.getElementById('disconnectBleButton');
+    const findDevice = document.getElementById('findDevice');
+    const assetValue = document.getElementById('assetName');
+    const retrievedValue = document.getElementById('valueContainer');
+    const resultValue=document.getElementById('resultContainer');
+    const latestValueSent = document.getElementById('valueSent');
+    const bleStateContainer = document.getElementById('bleState');
+    const timestampContainer = document.getElementById('timestamp');
+    const resulttimestampContainer=document.getElementById('resulttimestamp');
+    const logout=document.getElementById('logout');
+    const radioButtons = document.getElementsByName('radiogroup');
+
+    //Define BLE Device Specs
+    var deviceName ='ESP32 Zone 1';
+    var deviceName2 ='ESP32 Zone 2';
+    var bleService = '4fafc201-1fb5-459e-8fcc-c5c9c331914b';
+    var ledCharacteristic = 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+    var sensorCharacteristic= 'beb5483e-36e1-4688-b7f5-ea07361b26a8';
+
+    var selectedValue = null;
+    var address=null;
+    var flagdevice=false;
+    var discoverFlag=false;
+    var serverName=null;
+
+    //Global Variables to Handle Bluetooth
+    var bleServer;
+    var bleServiceFound;
+    var sensorCharacteristicFound;
+
+    // Connect Button (search for BLE Devices only if BLE is available)
+    connectButton.addEventListener('click', (event) => {
+        if (isWebBluetoothEnabled()){
+            discoverFlag=true;
+            flagdevice=false;
+            connectToDevice();
+        }
+    });
+
+    // Disconnect Button
+    disconnectButton.addEventListener('click', disconnectDevice);
+
+    // Write to the ESP32 LED Characteristic
+    findDevice.addEventListener('click', () => {
+        discoverFlag=false;
+        findAsset();
+    });
+    // offButton.addEventListener('click', () => writeOnCharacteristic(0));
+
+    logout.addEventListener('click', (event)=>{
+        event.preventDefault();
+        window.location.href = "login.html";
+    });
+
+    // Check if BLE is available in your Browser
+    function isWebBluetoothEnabled() {
+        if (!navigator.bluetooth) {
+            console.log('Web Bluetooth API is not available in this browser!');
+            bleStateContainer.innerHTML = "Web Bluetooth API is not available in this browser/device!";
+            return false
+        }
+        console.log('Web Bluetooth API supported in this browser.');
+        return true
+    }
+    function findAsset() {
+        for (let i = 0; i < radioButtons.length; i++) {
+            if (radioButtons[i].checked) {
+                selectedValue = radioButtons[i].value;
+                address= radioButtons[i].id;
+                assetValue.innerHTML = selectedValue;
+                console.log(radioButtons[i].value);
+                break;
+            }
+        }
+
+        if (selectedValue) {
+            console.log('Selected option:',selectedValue);
+            console.log('address',address);
+            flagdevice=true;
+            console.log(flagdevice);
+            connectToDevice();
+        } else {
+            alert('Please select an asset!');
+        }
+    }
+    // Connect to BLE Device and Enable Notifications
+    function connectToDevice(){
+        console.log(flagdevice);
+        console.log('Initializing Bluetooth...');
+        navigator.bluetooth.requestDevice({
+            //filters: [{name: [deviceName, deviceName2] }]
+            filters: [{ services: [bleService] }]
+            //optionalServices: [bleService]
+        })
+        .then(device => {
+            console.log(device);
+            console.log(flagdevice);
+            console.log('Device Selected:', device.name);
+            serverName=device.name;
+            if(discoverFlag){
+                bleStateContainer.innerHTML = 'Connected to device ' + device.name;
+                bleStateContainer.style.color = "#24af37";
+            }
+            device.addEventListener('gattservicedisconnected', onDisconnected);
+            return device.gatt.connect();
+        })
+        .then(gattServer =>{
+            bleServer = gattServer;
+            console.log("Connected to GATT Server");
+            console.log(flagdevice);
+            return bleServer.getPrimaryService(bleService);
+        })
+        .then(service => {
+            bleServiceFound = service;
+            console.log("Service discovered:", service.uuid);
+            return service.getCharacteristic(sensorCharacteristic);
+        })
+        .then(characteristic => {
+            console.log("Characteristic discovered:", characteristic.uuid);
+            sensorCharacteristicFound = characteristic;
+            characteristic.addEventListener('characteristicvaluechanged', handleCharacteristicChange);
+            characteristic.startNotifications();
+            console.log("Notifications Started.");
+            return characteristic.readValue();
+        })
+        .then(value => {
+            console.log("Read value: ", value);
+            console.log(flagdevice);
+            const decodedValue = new TextDecoder().decode(value);
+            if(flagdevice)
+            {
+                console.log(decodedValue);
+                console.log(decodedValue.indexOf(address));
+                if(decodedValue.indexOf(address)>-1){
+                    resultValue.innerHTML ="Located in "+serverName;
+                }
+                else{
+                    resultValue.innerHTML = "Could not locate asset in "+serverName;
+                }
+                return;
+            }
+            else{
+                console.log("Decoded value: ", decodedValue);
+                retrievedValue.innerHTML = decodedValue;
+            }
+        })
+        .catch(error => {
+            console.log('Error: ', error);
+        })
+    }
+
+    function onDisconnected(event){
+        console.log('Device Disconnected:', event.target.device.name);
+        bleStateContainer.innerHTML = "Device disconnected";
+        bleStateContainer.style.color = "#d13a30";
+
+        connectToDevice();
+    }
+
+    function handleCharacteristicChange(event){
+        const newValueReceived = new TextDecoder().decode(event.target.value);
+        console.log("Characteristic value changed: ", newValueReceived);
+        if(address!=null){
+            if(newValueReceived.indexOf(address)==-1)
+                resultValue.innerHTML="Could not located asset in "+serverName;
+            else
+                resultValue.innerHTML="Located asset in "+serverName;
+            if(flagdevice)
+                resulttimestampContainer.innerHTML=getDateTime();  
+        }
+        if(discoverFlag){
+            retrievedValue.innerHTML = newValueReceived;
+            timestampContainer.innerHTML = getDateTime();
+        }
+    }
+
+    function disconnectDevice() {
+        console.log("Disconnect Device.");
+        if (bleServer && bleServer.connected) {
+            if (sensorCharacteristicFound) {
+                sensorCharacteristicFound.stopNotifications()
+                    .then(() => {
+                        console.log("Notifications Stopped");
+                        return bleServer.disconnect();
+                    })
+                    .then(() => {
+                        console.log("Device Disconnected");
+                        bleStateContainer.innerHTML = "Device Disconnected";
+                        bleStateContainer.style.color = "#d13a30";
+
+                    })
+                    .catch(error => {
+                        console.log("An error occurred:", error);
+                    });
+            } else {
+                console.log("No characteristic found to disconnect.");
+            }
+        } else {
+            // Throw an error if Bluetooth is not connected
+            console.error("Bluetooth is not connected.");
+            window.alert("Bluetooth is not connected.")
+        }
+    }
+
+    function getDateTime() {
+        var currentdate = new Date();
+        var day = ("00" + currentdate.getDate()).slice(-2); // Convert day to string and slice
+        var month = ("00" + (currentdate.getMonth() + 1)).slice(-2);
+        var year = currentdate.getFullYear();
+        var hours = ("00" + currentdate.getHours()).slice(-2);
+        var minutes = ("00" + currentdate.getMinutes()).slice(-2);
+        var seconds = ("00" + currentdate.getSeconds()).slice(-2);
+
+        var datetime = day + "/" + month + "/" + year + " at " + hours + ":" + minutes + ":" + seconds;
+        return datetime;
+    }
+
+
+</script>
+
+</html>
